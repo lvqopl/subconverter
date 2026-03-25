@@ -1,84 +1,143 @@
-# Cloudflare Workers 订阅转换器
+# Cloudflare Workers Subscription Converter
 
-一个可以部署到 Cloudflare Workers 的轻量级订阅转换服务，用来把常见代理订阅转换成不同客户端可用的格式。
+A lightweight subscription conversion service for Cloudflare Workers. It can convert common proxy subscriptions into formats that Clash, v2rayN, and sing-box can consume, and it includes a built-in web UI.
 
-目前支持的输入节点协议：
+## Supported input protocols
 
 - `vmess`
 - `vless`
 - `trojan`
-- `ss`
+- `shadowsocks (ss)`
 - `socks5`
 - `http/https`
+- `tuic`
+- `hysteria2 (hy2)`
 
-目前支持的输出目标：
+## Supported output targets
 
 - `clash`
 - `v2rayn`
 - `singbox`
 
-## 接口说明
+## Web UI
 
-### 1. GET 远程订阅转换
+After deployment, open the Worker root path:
+
+```text
+https://your-worker.example.workers.dev/
+```
+
+The page supports:
+
+- converting a remote subscription URL
+- pasting raw subscription content
+- choosing Clash, v2rayN, or sing-box output
+- copying the converted result with one click
+
+## API
+
+### GET remote subscription
 
 ```bash
 curl "https://your-worker.example.workers.dev/convert?target=clash&url=https%3A%2F%2Fexample.com%2Fsub"
 ```
 
-### 2. POST 原始订阅内容
+### POST raw subscription content
 
 ```bash
-curl "https://your-worker.example.workers.dev/convert?target=singbox" \
-  -H "Content-Type: text/plain" \
-  --data-binary @subscription.txt
+curl "https://your-worker.example.workers.dev/convert?target=singbox" ^
+  -H "Content-Type: text/plain" ^
+  --data-binary "@subscription.txt"
 ```
 
-### 3. POST JSON
+### POST JSON
 
 ```bash
-curl "https://your-worker.example.workers.dev/convert" \
-  -H "Content-Type: application/json" \
+curl "https://your-worker.example.workers.dev/convert" ^
+  -H "Content-Type: application/json" ^
   -d "{\"target\":\"clash\",\"url\":\"https://example.com/sub\"}"
 ```
 
-### 4. 健康检查
+### Health check
 
 ```bash
 curl "https://your-worker.example.workers.dev/health"
 ```
 
-## 本地开发
+## Local testing
+
+### 1. Install dependencies
 
 ```bash
 npm install
-npm test
+```
+
+### 2. Start the local Worker
+
+```bash
 npm run dev
 ```
 
-## 部署到 Cloudflare Workers
+Wrangler usually prints a local address similar to:
 
-1. 登录 Cloudflare:
+```text
+http://127.0.0.1:8787
+```
+
+### 3. Test the web page
+
+Open:
+
+```text
+http://127.0.0.1:8787/
+```
+
+### 4. Test the API with curl
+
+```bash
+curl "http://127.0.0.1:8787/convert?target=clash&url=https%3A%2F%2Fexample.com%2Fsub"
+```
+
+Or post local subscription content:
+
+```bash
+curl "http://127.0.0.1:8787/convert?target=v2rayn" ^
+  -H "Content-Type: text/plain" ^
+  --data-binary "@subscription.txt"
+```
+
+### 5. Run tests
+
+```bash
+npm test
+```
+
+If your environment restricts `node --test` child process execution, you may see a permission error. In that case, run the local Worker and validate the page plus the API manually with a browser and curl.
+
+## Deploy to Cloudflare Workers
+
+1. Login to Cloudflare:
 
 ```bash
 npx wrangler login
 ```
 
-2. 部署:
+2. Deploy:
 
 ```bash
 npm run deploy
 ```
 
-如果需要修改 Worker 名称，可以编辑 `wrangler.toml` 里的 `name`。
+If you want a different Worker name, edit `name` in `wrangler.toml`.
 
-## 代码结构
+## Project structure
 
-- `src/index.js`: Worker 入口和 HTTP 路由
-- `src/converter.js`: 订阅解析与转换逻辑
-- `test/converter.test.js`: 基础测试
+- `src/index.js`: Worker entry, web UI, and routes
+- `src/converter.js`: subscription parsing and conversion logic
+- `test/converter.test.js`: basic tests
 
-## 已知限制
+## Known limitations
 
-- 目前没有实现完整的 Clash YAML 反向解析，输入侧主要面向 v2ray/vless/trojan/ss 这类 URI 订阅。
-- 少数特殊插件参数不会完整映射到所有目标格式。
-- 如果订阅里含有不支持的协议，服务会自动跳过，并在响应头里给出跳过数量。
+- Input currently focuses on URI subscriptions and does not implement full Clash YAML reverse parsing.
+- Some advanced plugin-specific parameters are not mapped one-to-one across every target format.
+- Unsupported protocols are skipped automatically, and the response headers include the skipped count.

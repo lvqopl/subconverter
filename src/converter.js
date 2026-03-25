@@ -68,7 +68,7 @@ function isLikelyNodeList(value) {
   if (!value) {
     return false;
   }
-  return /^(vmess|vless|trojan|ss|socks|http):\/\//m.test(value);
+  return /^(vmess|vless|trojan|ss|socks|http|tuic|hy2|hysteria2):\/\//m.test(value);
 }
 
 function parsePort(value) {
@@ -103,18 +103,13 @@ function parseVmess(uri, index) {
     return null;
   }
 
-  const tlsEnabled = ["tls", "xtls"].includes(String(json.tls || "").toLowerCase());
-  const wsEnabled = String(json.net || "").toLowerCase() === "ws";
-  const grpcEnabled = String(json.net || "").toLowerCase() === "grpc";
-  const httpEnabled = ["http", "h2"].includes(String(json.net || "").toLowerCase());
-
   return {
     ...baseNode("vmess", json.add, parsePort(json.port), ensureName(json.ps, `vmess-${index}`)),
     uuid: json.id,
     alterId: parsePort(json.aid || "0"),
     cipher: json.scy || "auto",
     udp: true,
-    tls: tlsEnabled,
+    tls: ["tls", "xtls"].includes(String(json.tls || "").toLowerCase()),
     skipCertVerify: false,
     servername: json.sni || "",
     network: (json.net || "tcp").toLowerCase(),
@@ -123,11 +118,7 @@ function parseVmess(uri, index) {
     httpHost: json.host || "",
     httpPath: json.path || "",
     grpcServiceName: json.path || "",
-    fingerprint: json.fp || "",
-    clientFingerprint: json.fp || "",
-    wsEnabled,
-    grpcEnabled,
-    httpEnabled
+    clientFingerprint: json.fp || ""
   };
 }
 
@@ -135,7 +126,6 @@ function parseVless(uri, index) {
   const url = new URL(uri);
   const params = parseQuery(url.search);
   const security = (params.security || "").toLowerCase();
-  const type = (params.type || "tcp").toLowerCase();
 
   return {
     ...baseNode("vless", url.hostname, parsePort(url.port), ensureName(safeDecode(url.hash.slice(1)), `vless-${index}`)),
@@ -144,12 +134,11 @@ function parseVless(uri, index) {
     tls: ["tls", "reality"].includes(security),
     skipCertVerify: parseBool(params.allowInsecure),
     servername: params.sni || params.host || "",
-    network: type,
+    network: (params.type || "tcp").toLowerCase(),
     flow: params.flow || "",
     wsPath: params.path ? safeDecode(params.path) : "",
     wsHost: params.host || "",
     grpcServiceName: params.serviceName || "",
-    fingerprint: params.fp || "",
     clientFingerprint: params.fp || "",
     reality: security === "reality",
     publicKey: params.pbk || "",
@@ -161,7 +150,6 @@ function parseVless(uri, index) {
 function parseTrojan(uri, index) {
   const url = new URL(uri);
   const params = parseQuery(url.search);
-  const type = (params.type || "tcp").toLowerCase();
 
   return {
     ...baseNode("trojan", url.hostname, parsePort(url.port), ensureName(safeDecode(url.hash.slice(1)), `trojan-${index}`)),
@@ -170,11 +158,10 @@ function parseTrojan(uri, index) {
     tls: true,
     skipCertVerify: parseBool(params.allowInsecure),
     servername: params.sni || params.peer || "",
-    network: type,
+    network: (params.type || "tcp").toLowerCase(),
     wsPath: params.path ? safeDecode(params.path) : "",
     wsHost: params.host || "",
     grpcServiceName: params.serviceName || "",
-    fingerprint: params.fp || "",
     clientFingerprint: params.fp || ""
   };
 }
@@ -193,6 +180,7 @@ function parseSs(uri, index) {
   if (!target.includes("@")) {
     authAndServer = decodeBase64Loose(target);
   }
+
   const atIndex = authAndServer.lastIndexOf("@");
   if (atIndex < 0) {
     return null;
@@ -235,6 +223,43 @@ function parseHttp(uri, index) {
   };
 }
 
+function parseTuic(uri, index) {
+  const url = new URL(uri);
+  const params = parseQuery(url.search);
+
+  return {
+    ...baseNode("tuic", url.hostname, parsePort(url.port), ensureName(safeDecode(url.hash.slice(1)), `tuic-${index}`)),
+    uuid: safeDecode(url.username),
+    password: safeDecode(url.password),
+    udp: true,
+    congestionController: params.congestion_control || params.congestionControl || "bbr",
+    alpn: params.alpn ? params.alpn.split(",").map((item) => item.trim()).filter(Boolean) : [],
+    disableSni: parseBool(params.disable_sni || params.disableSni),
+    sni: params.sni || "",
+    skipCertVerify: parseBool(params.allow_insecure || params.allowInsecure),
+    zeroRttHandshake: parseBool(params["0rtt"] || params.zero_rtt_handshake || params.zeroRttHandshake),
+    heartbeat: params.heartbeat || "10s"
+  };
+}
+
+function parseHysteria2(uri, index) {
+  const url = new URL(uri);
+  const params = parseQuery(url.search);
+
+  return {
+    ...baseNode("hysteria2", url.hostname, parsePort(url.port), ensureName(safeDecode(url.hash.slice(1)), `hysteria2-${index}`)),
+    password: safeDecode(url.username),
+    udp: true,
+    sni: params.sni || params.peer || "",
+    skipCertVerify: parseBool(params.insecure),
+    alpn: params.alpn ? params.alpn.split(",").map((item) => item.trim()).filter(Boolean) : [],
+    obfs: params.obfs || "",
+    obfsPassword: params["obfs-password"] || params.obfsPassword || "",
+    upMbps: parsePort(params.upmbps || params.up),
+    downMbps: parsePort(params.downmbps || params.down)
+  };
+}
+
 export function parseSubscription(input) {
   const lines = splitNodeLines(input);
   const nodes = [];
@@ -257,6 +282,10 @@ export function parseSubscription(input) {
         parsed = parseSocks(line, index + 1);
       } else if (lower.startsWith("http://") || lower.startsWith("https://")) {
         parsed = parseHttp(line, index + 1);
+      } else if (lower.startsWith("tuic://")) {
+        parsed = parseTuic(line, index + 1);
+      } else if (lower.startsWith("hy2://") || lower.startsWith("hysteria2://")) {
+        parsed = parseHysteria2(line, index + 1);
       }
     } catch {
       parsed = null;
@@ -334,8 +363,7 @@ function renderVlessUri(node) {
       params.set("spx", node.spiderX);
     }
   }
-  const suffix = encodeNodeName(node.name);
-  return `vless://${node.uuid}@${node.server}:${node.port}?${params.toString()}#${suffix}`;
+  return `vless://${node.uuid}@${node.server}:${node.port}?${params.toString()}#${encodeNodeName(node.name)}`;
 }
 
 function renderTrojanUri(node) {
@@ -359,8 +387,7 @@ function renderTrojanUri(node) {
   if (node.skipCertVerify) {
     params.set("allowInsecure", "1");
   }
-  const suffix = encodeNodeName(node.name);
-  return `trojan://${node.password}@${node.server}:${node.port}?${params.toString()}#${suffix}`;
+  return `trojan://${node.password}@${node.server}:${node.port}?${params.toString()}#${encodeNodeName(node.name)}`;
 }
 
 function renderSsUri(node) {
@@ -379,27 +406,69 @@ function renderHttpUri(node) {
   return `${scheme}://${auth}${node.server}:${node.port}#${encodeNodeName(node.name)}`;
 }
 
+function renderTuicUri(node) {
+  const params = new URLSearchParams();
+  if (node.congestionController) {
+    params.set("congestion_control", node.congestionController);
+  }
+  if (node.alpn?.length) {
+    params.set("alpn", node.alpn.join(","));
+  }
+  if (node.disableSni) {
+    params.set("disable_sni", "1");
+  }
+  if (node.sni) {
+    params.set("sni", node.sni);
+  }
+  if (node.skipCertVerify) {
+    params.set("allow_insecure", "1");
+  }
+  if (node.zeroRttHandshake) {
+    params.set("0rtt", "1");
+  }
+  if (node.heartbeat) {
+    params.set("heartbeat", node.heartbeat);
+  }
+  return `tuic://${encodeURIComponent(node.uuid)}:${encodeURIComponent(node.password)}@${node.server}:${node.port}?${params.toString()}#${encodeNodeName(node.name)}`;
+}
+
+function renderHysteria2Uri(node) {
+  const params = new URLSearchParams();
+  if (node.sni) {
+    params.set("sni", node.sni);
+  }
+  if (node.skipCertVerify) {
+    params.set("insecure", "1");
+  }
+  if (node.alpn?.length) {
+    params.set("alpn", node.alpn.join(","));
+  }
+  if (node.obfs) {
+    params.set("obfs", node.obfs);
+  }
+  if (node.obfsPassword) {
+    params.set("obfs-password", node.obfsPassword);
+  }
+  if (node.upMbps) {
+    params.set("upmbps", String(node.upMbps));
+  }
+  if (node.downMbps) {
+    params.set("downmbps", String(node.downMbps));
+  }
+  return `hy2://${encodeURIComponent(node.password)}@${node.server}:${node.port}?${params.toString()}#${encodeNodeName(node.name)}`;
+}
+
 export function renderV2rayn(nodes) {
   const lines = nodes
     .map((node) => {
-      if (node.type === "vmess") {
-        return renderVmessUri(node);
-      }
-      if (node.type === "vless") {
-        return renderVlessUri(node);
-      }
-      if (node.type === "trojan") {
-        return renderTrojanUri(node);
-      }
-      if (node.type === "ss") {
-        return renderSsUri(node);
-      }
-      if (node.type === "socks5") {
-        return renderSocksUri(node);
-      }
-      if (node.type === "http") {
-        return renderHttpUri(node);
-      }
+      if (node.type === "vmess") return renderVmessUri(node);
+      if (node.type === "vless") return renderVlessUri(node);
+      if (node.type === "trojan") return renderTrojanUri(node);
+      if (node.type === "ss") return renderSsUri(node);
+      if (node.type === "socks5") return renderSocksUri(node);
+      if (node.type === "http") return renderHttpUri(node);
+      if (node.type === "tuic") return renderTuicUri(node);
+      if (node.type === "hysteria2") return renderHysteria2Uri(node);
       return "";
     })
     .filter(Boolean)
@@ -466,27 +535,19 @@ function clashProxyFromNode(node) {
       tls: node.tls,
       skipCertVerify: node.skipCertVerify
     };
-    if (node.servername) {
-      proxy.servername = node.servername;
-    }
+    if (node.servername) proxy.servername = node.servername;
     if (node.network === "ws") {
       proxy.network = "ws";
       proxy["ws-opts"] = {
         path: node.wsPath || "/",
-        headers: {
-          Host: node.wsHost || node.servername || node.server
-        }
+        headers: { Host: node.wsHost || node.servername || node.server }
       };
     }
     if (node.network === "grpc") {
       proxy.network = "grpc";
-      proxy["grpc-opts"] = {
-        "grpc-service-name": node.grpcServiceName || ""
-      };
+      proxy["grpc-opts"] = { "grpc-service-name": node.grpcServiceName || "" };
     }
-    if (node.clientFingerprint) {
-      proxy["client-fingerprint"] = node.clientFingerprint;
-    }
+    if (node.clientFingerprint) proxy["client-fingerprint"] = node.clientFingerprint;
     return proxy;
   }
 
@@ -502,28 +563,18 @@ function clashProxyFromNode(node) {
       skipCertVerify: node.skipCertVerify,
       network: node.network || "tcp"
     };
-    if (node.servername) {
-      proxy.servername = node.servername;
-    }
-    if (node.flow) {
-      proxy.flow = node.flow;
-    }
+    if (node.servername) proxy.servername = node.servername;
+    if (node.flow) proxy.flow = node.flow;
     if (node.network === "ws") {
       proxy["ws-opts"] = {
         path: node.wsPath || "/",
-        headers: {
-          Host: node.wsHost || node.servername || node.server
-        }
+        headers: { Host: node.wsHost || node.servername || node.server }
       };
     }
     if (node.network === "grpc") {
-      proxy["grpc-opts"] = {
-        "grpc-service-name": node.grpcServiceName || ""
-      };
+      proxy["grpc-opts"] = { "grpc-service-name": node.grpcServiceName || "" };
     }
-    if (node.clientFingerprint) {
-      proxy["client-fingerprint"] = node.clientFingerprint;
-    }
+    if (node.clientFingerprint) proxy["client-fingerprint"] = node.clientFingerprint;
     if (node.reality) {
       proxy["reality-opts"] = {
         "public-key": node.publicKey || "",
@@ -548,20 +599,14 @@ function clashProxyFromNode(node) {
       proxy.network = "ws";
       proxy["ws-opts"] = {
         path: node.wsPath || "/",
-        headers: {
-          Host: node.wsHost || node.servername || node.server
-        }
+        headers: { Host: node.wsHost || node.servername || node.server }
       };
     }
     if (node.network === "grpc") {
       proxy.network = "grpc";
-      proxy["grpc-opts"] = {
-        "grpc-service-name": node.grpcServiceName || ""
-      };
+      proxy["grpc-opts"] = { "grpc-service-name": node.grpcServiceName || "" };
     }
-    if (node.clientFingerprint) {
-      proxy["client-fingerprint"] = node.clientFingerprint;
-    }
+    if (node.clientFingerprint) proxy["client-fingerprint"] = node.clientFingerprint;
     return proxy;
   }
 
@@ -575,9 +620,7 @@ function clashProxyFromNode(node) {
       password: node.password,
       udp: true
     };
-    if (node.plugin) {
-      proxy.plugin = node.plugin;
-    }
+    if (node.plugin) proxy.plugin = node.plugin;
     return proxy;
   }
 
@@ -591,6 +634,45 @@ function clashProxyFromNode(node) {
       password: node.password || "",
       udp: true
     };
+  }
+
+  if (node.type === "tuic") {
+    const proxy = {
+      name: node.name,
+      type: "tuic",
+      server: node.server,
+      port: node.port,
+      uuid: node.uuid,
+      password: node.password,
+      udp: true,
+      "congestion-controller": node.congestionController || "bbr",
+      "disable-sni": node.disableSni || false,
+      "skip-cert-verify": node.skipCertVerify || false,
+      heartbeat: node.heartbeat || "10s"
+    };
+    if (node.sni) proxy.sni = node.sni;
+    if (node.alpn?.length) proxy.alpn = node.alpn;
+    if (node.zeroRttHandshake) proxy["reduce-rtt"] = true;
+    return proxy;
+  }
+
+  if (node.type === "hysteria2") {
+    const proxy = {
+      name: node.name,
+      type: "hysteria2",
+      server: node.server,
+      port: node.port,
+      password: node.password,
+      udp: true,
+      "skip-cert-verify": node.skipCertVerify || false
+    };
+    if (node.sni) proxy.sni = node.sni;
+    if (node.alpn?.length) proxy.alpn = node.alpn;
+    if (node.obfs) proxy.obfs = node.obfs;
+    if (node.obfsPassword) proxy["obfs-password"] = node.obfsPassword;
+    if (node.upMbps) proxy.up = `${node.upMbps} Mbps`;
+    if (node.downMbps) proxy.down = `${node.downMbps} Mbps`;
+    return proxy;
   }
 
   return {
@@ -611,7 +693,7 @@ export function renderClash(nodes) {
     proxies: group.name === "Auto" ? proxies.map((proxy) => proxy.name) : ["Auto", ...proxies.map((proxy) => proxy.name), "DIRECT"]
   }));
 
-  const config = {
+  return renderYamlObject({
     port: 7890,
     "socks-port": 7891,
     "allow-lan": false,
@@ -621,12 +703,8 @@ export function renderClash(nodes) {
     "external-controller": "127.0.0.1:9090",
     proxies,
     "proxy-groups": groups,
-    rules: [
-      "MATCH,Proxy"
-    ]
-  };
-
-  return renderYamlObject(config);
+    rules: ["MATCH,Proxy"]
+  });
 }
 
 function singboxOutboundFromNode(node, index) {
@@ -755,6 +833,52 @@ function singboxOutboundFromNode(node, index) {
     };
   }
 
+  if (node.type === "tuic") {
+    return {
+      type: "tuic",
+      tag,
+      server: node.server,
+      server_port: node.port,
+      uuid: node.uuid,
+      password: node.password,
+      congestion_control: node.congestionController || "bbr",
+      udp_relay_mode: "native",
+      zero_rtt_handshake: node.zeroRttHandshake || false,
+      heartbeat: node.heartbeat || "10s",
+      tls: {
+        enabled: true,
+        server_name: node.sni || undefined,
+        insecure: node.skipCertVerify || false,
+        alpn: node.alpn?.length ? node.alpn : undefined,
+        disable_sni: node.disableSni || false
+      }
+    };
+  }
+
+  if (node.type === "hysteria2") {
+    return {
+      type: "hysteria2",
+      tag,
+      server: node.server,
+      server_port: node.port,
+      password: node.password,
+      up_mbps: node.upMbps || undefined,
+      down_mbps: node.downMbps || undefined,
+      obfs: node.obfs
+        ? {
+            type: node.obfs,
+            password: node.obfsPassword || undefined
+          }
+        : undefined,
+      tls: {
+        enabled: true,
+        server_name: node.sni || undefined,
+        insecure: node.skipCertVerify || false,
+        alpn: node.alpn?.length ? node.alpn : undefined
+      }
+    };
+  }
+
   return {
     type: "http",
     tag,
@@ -768,42 +892,35 @@ function singboxOutboundFromNode(node, index) {
 
 export function renderSingbox(nodes) {
   const outboundTags = nodes.map((node) => node.name);
-  const config = {
-    log: {
-      level: "info"
-    },
-    dns: {
-      servers: [
-        { tag: "google", address: "8.8.8.8" },
-        { tag: "cloudflare", address: "1.1.1.1" }
-      ]
-    },
-    outbounds: [
-      {
-        type: "selector",
-        tag: "select",
-        outbounds: ["auto", ...outboundTags]
+  return JSON.stringify(
+    {
+      log: { level: "info" },
+      dns: {
+        servers: [
+          { tag: "google", address: "8.8.8.8" },
+          { tag: "cloudflare", address: "1.1.1.1" }
+        ]
       },
-      {
-        type: "urltest",
-        tag: "auto",
-        outbounds: outboundTags,
-        url: "https://www.gstatic.com/generate_204",
-        interval: "5m"
-      },
-      ...nodes.map(singboxOutboundFromNode),
-      {
-        type: "direct",
-        tag: "direct"
+      outbounds: [
+        { type: "selector", tag: "select", outbounds: ["auto", ...outboundTags] },
+        {
+          type: "urltest",
+          tag: "auto",
+          outbounds: outboundTags,
+          url: "https://www.gstatic.com/generate_204",
+          interval: "5m"
+        },
+        ...nodes.map(singboxOutboundFromNode),
+        { type: "direct", tag: "direct" }
+      ],
+      route: {
+        auto_detect_interface: true,
+        final: "select"
       }
-    ],
-    route: {
-      auto_detect_interface: true,
-      final: "select"
-    }
-  };
-
-  return JSON.stringify(config, null, 2);
+    },
+    null,
+    2
+  );
 }
 
 export function convertSubscription(input, target) {
