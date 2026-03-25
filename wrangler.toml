@@ -5,7 +5,7 @@ compatibility_date = "2026-03-25"
 [[d1_databases]]
 binding = "DB"
 database_name = "subconverter-db"
-database_id = "replace-with-your-d1-database-id"
+database_id = "451dd76a-c64f-4c26-9041-2f11c8407f43"
 
 [observability]
 enabled = true
