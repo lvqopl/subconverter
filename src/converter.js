@@ -15,14 +15,21 @@ export function decodeBase64Loose(value) {
   }
 
   try {
-    return atob(normalized);
+    const binary = atob(normalized);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
   } catch {
     return '';
   }
 }
 
 function encodeBase64(value) {
-  return btoa(value);
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
 }
 
 function ensureName(value, fallback) {
