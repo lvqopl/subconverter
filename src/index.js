@@ -1,7 +1,7 @@
 import {
   convertSubscription,
   parseSubscription,
-  renderV2rayn
+  renderNodeUris
 } from './converter.js';
 
 import { createSharedResult, getSharedResult, purgeExpiredResults } from './storage.js';
@@ -315,7 +315,13 @@ async function runConversion(inputData) {
   if (normalizedTarget === 'clash' && templateUrl) {
     templateText = await fetchText(templateUrl);
   }
-  const result = await convertSubscription(input, normalizedTarget, { templateUrl, templateText, fetchText });
+  const result = await convertSubscription(input, normalizedTarget, {
+  templateUrl,
+  templateText,
+  fetchText,
+  plainUris: inputData.plainUris === true
+});
+
   return { target: normalizedTarget, templateUrl, ttlSeconds: inputData.ttlSeconds, result };
 }
 
@@ -345,8 +351,10 @@ export default {
           target: 'v2rayn',
           templatePreset: 'none',
           customTemplateUrl: '',
-          ttlSeconds: '3600'
+          ttlSeconds: '3600',
+          plainUris: true
         };
+
 
         const payload = await runConversion(inputData);
 
