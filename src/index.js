@@ -329,74 +329,25 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (request.method === 'GET' && url.pathname === '/') return html(renderPage());
-    if (url.pathname === '/health') return json({ ok: true, now: new Date().toISOString() });
-        // Clash YAML -> Base64 节点订阅
-    if (
-      (url.pathname === '/clash2base64' ||
-        url.pathname === '/clash2uri') &&
-      request.method === 'GET'
-    ) {
-      try {
-        const sourceUrl = url.searchParams.get('url') || '';
-
-        if (!sourceUrl) {
-          return json({
-            ok: false,
-            message: 'Missing url parameter.'
-          }, 400);
-        }
-
-        const inputData = {
-          sourceUrl,
-          subscription: '',
-          target: 'v2rayn',
-          templatePreset: 'none',
-          customTemplateUrl: '',
-          ttlSeconds: '3600',
-          plainUris: true
-        };
-
-        const payload = await runConversion(inputData);
-
-        return new Response(payload.result.body, {
-          status: 200,
-          headers: {
-            'content-type': 'text/plain; charset=utf-8',
-            'cache-control': 'no-store',
-            'x-subconverter-target': 'uri',
-            'x-subconverter-node-count': String(
-              payload.result.meta?.count || 0
-            ),
-            'x-subconverter-skipped-count': String(
-              payload.result.meta?.skipped || 0
-            )
-          }
-        });
-      } catch (error) {
-        return json({
-          ok: false,
-          message: error instanceof Error
-            ? error.message
-            : 'Unknown error'
-        }, 500);
-      }
+    if (url.pathname === '/health') {
+      return json({ ok: true, now: new Date().toISOString() });
     }
-
-    // 4. Base64 -> Clash YAML
+    
+    // Base64 -> Clash YAML（保留这个）
     if (
       url.pathname === '/base642clash' &&
       request.method === 'GET'
     ) {
       try {
         const sourceUrl = url.searchParams.get('url') || '';
-
+    
         if (!sourceUrl) {
           return json({
             ok: false,
             message: 'Missing url parameter.'
           }, 400);
         }
-
+    
         const inputData = {
           sourceUrl,
           subscription: '',
@@ -408,9 +359,9 @@ export default {
             '',
           ttlSeconds: '3600'
         };
-
+    
         const payload = await runConversion(inputData);
-
+    
         return buildResponse(
           payload.result,
           'clash',
@@ -425,32 +376,104 @@ export default {
         }, 500);
       }
     }
-
+    
+    // 分享链接创建（保留）
     if (url.pathname === '/share' && request.method === 'POST') {
       try {
         const inputData = await loadInput(request, url);
         const payload = await runConversion(inputData);
         await purgeExpiredResults(env).catch(() => {});
-        const shared = await createSharedResult(env, { target: payload.target, content: payload.result.body, contentType: payload.result.contentType, templateUrl: payload.templateUrl, ttlSeconds: payload.ttlSeconds });
-        return json({ ok: true, id: shared.id, url: shareUrlFor(request.url, shared.id), expiresAt: shared.expiresAt, target: payload.target, nodeCount: payload.result.meta?.count || 0, skippedCount: payload.result.meta?.skipped || 0, templateUrl: payload.templateUrl, content: payload.result.body });
+        const shared = await createSharedResult(env, {
+          target: payload.target,
+          content: payload.result.body,
+          contentType: payload.result.contentType,
+          templateUrl: payload.templateUrl,
+          ttlSeconds: payload.ttlSeconds
+        });
+        return json({
+          ok: true,
+          id: shared.id,
+          url: shareUrlFor(request.url, shared.id),
+          expiresAt: shared.expiresAt,
+          target: payload.target,
+          nodeCount: payload.result.meta?.count || 0,
+          skippedCount: payload.result.meta?.skipped || 0,
+          templateUrl: payload.templateUrl,
+          content: payload.result.body
+        });
       } catch (error) {
-        return json({ ok: false, message: error instanceof Error ? error.message : 'Unknown error' }, 500);
+        return json({
+          ok: false,
+          message: error instanceof Error
+            ? error.message
+            : 'Unknown error'
+        }, 500);
       }
     }
-
+    
+    // 分享链接读取（保留）
     if (url.pathname.startsWith('/share/') && request.method === 'GET') {
       const id = url.pathname.slice('/share/'.length).trim();
       try {
         const shared = await getSharedResult(env, id);
-        if (!shared) return json({ ok: false, message: 'Share link not found.' }, 404);
-        if (shared.expired) return json({ ok: false, message: 'Share link expired.' }, 410);
-        return new Response(shared.content, { status: 200, headers: { 'content-type': shared.content_type, 'cache-control': 'no-store', 'x-subconverter-target': shared.target, 'x-clash-config-url': shared.template_url || '', 'x-share-expires-at': shared.expires_at } });
+        if (!shared) {
+          return json({
+            ok: false,
+            message: 'Share link not found.'
+          }, 404);
+        }
+        if (shared.expired) {
+          return json({
+            ok: false,
+            message: 'Share link expired.'
+          }, 410);
+        }
+        return new Response(shared.content, {
+          status: 200,
+          headers: {
+            'content-type': shared.content_type,
+            'cache-control': 'no-store',
+            'x-subconverter-target': shared.target,
+            'x-clash-config-url': shared.template_url || '',
+            'x-share-expires-at': shared.expires_at
+          }
+        });
       } catch (error) {
-        return json({ ok: false, message: error instanceof Error ? error.message : 'Unknown error' }, 500);
+        return json({
+          ok: false,
+          message: error instanceof Error
+            ? error.message
+            : 'Unknown error'
+        }, 500);
       }
     }
+    
+    // 通用转换接口（保留）
+    if (url.pathname === '/convert' && request.method === 'POST') {
+      try {
+        const inputData = await loadInput(request, url);
+        const payload = await runConversion(inputData);
+        return buildResponse(
+          payload.result,
+          payload.target,
+          payload.templateUrl
+        );
+      } catch (error) {
+        return json({
+          ok: false,
+          message: error instanceof Error
+            ? error.message
+            : 'Unknown error'
+        }, 500);
+      }
+    }
+    
+    // 404
+    return json({
+      ok: false,
+      message: 'Use /convert, /share, /share/:id, or open / for the web UI.'
+    }, 404);
 
-    if (url.pathname !== '/convert') return json({ ok: false, message: 'Use /convert, /share, /share/:id, or open / for the web UI.' }, 404);
 
     try {
       const inputData = await loadInput(request, url);
