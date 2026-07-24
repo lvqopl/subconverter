@@ -332,7 +332,8 @@ export default {
     if (url.pathname === '/health') return json({ ok: true, now: new Date().toISOString() });
         // Clash YAML -> Base64 节点订阅
     if (
-      url.pathname === '/clash2base64' &&
+      (url.pathname === '/clash2base64' ||
+        url.pathname === '/clash2uri') &&
       request.method === 'GET'
     ) {
       try {
@@ -355,7 +356,6 @@ export default {
           plainUris: true
         };
 
-
         const payload = await runConversion(inputData);
 
         return new Response(payload.result.body, {
@@ -363,7 +363,7 @@ export default {
           headers: {
             'content-type': 'text/plain; charset=utf-8',
             'cache-control': 'no-store',
-            'x-subconverter-target': 'v2rayn',
+            'x-subconverter-target': 'uri',
             'x-subconverter-node-count': String(
               payload.result.meta?.count || 0
             ),
@@ -382,7 +382,7 @@ export default {
       }
     }
 
-    // Base64 节点订阅 -> Clash YAML
+    // 4. Base64 -> Clash YAML
     if (
       url.pathname === '/base642clash' &&
       request.method === 'GET'
