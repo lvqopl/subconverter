@@ -1469,16 +1469,14 @@ export async function convertSubscription(input, target, options = {}) {
     };
   }
 
-    return {
+      return {
     contentType: 'text/plain; charset=utf-8',
-    body: options.plainUris
-      ? renderNodeUris(nodes)
-      : renderV2rayn(nodes),
+    body: renderNodeUris(nodes),
     meta: {
       count: nodes.length,
-      skipped: skipped.length,
-      plainUris: Boolean(options.plainUris)
+      skipped: skipped.length
     }
   };
+
 
 }
