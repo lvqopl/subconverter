@@ -745,24 +745,29 @@ function renderHysteria2Uri(node) {
   return `hy2://${encodeURIComponent(node.password)}@${node.server}:${node.port}?${params.toString()}#${encodeNodeName(node.name)}`;
 }
 
-export function renderV2rayn(nodes) {
-  const lines = nodes
-    .map((node) => {
-      if (node.type === 'vmess') return renderVmessUri(node);
-      if (node.type === 'vless') return renderVlessUri(node);
-      if (node.type === 'trojan') return renderTrojanUri(node);
-      if (node.type === 'ss') return renderSsUri(node);
-      if (node.type === 'socks5') return renderSocksUri(node);
-      if (node.type === 'http') return renderHttpUri(node);
-      if (node.type === 'tuic') return renderTuicUri(node);
-      if (node.type === 'hysteria2') return renderHysteria2Uri(node);
-      return '';
-    })
+function renderNodeUri(node) {
+  if (node.type === 'vmess') return renderVmessUri(node);
+  if (node.type === 'vless') return renderVlessUri(node);
+  if (node.type === 'trojan') return renderTrojanUri(node);
+  if (node.type === 'ss') return renderSsUri(node);
+  if (node.type === 'socks5') return renderSocksUri(node);
+  if (node.type === 'http') return renderHttpUri(node);
+  if (node.type === 'tuic') return renderTuicUri(node);
+  if (node.type === 'hysteria2') return renderHysteria2Uri(node);
+  return '';
+}
+
+export function renderNodeUris(nodes) {
+  return nodes
+    .map(renderNodeUri)
     .filter(Boolean)
     .join('\n');
-
-  return encodeBase64(lines);
 }
+
+export function renderV2rayn(nodes) {
+  return encodeBase64(renderNodeUris(nodes));
+}
+
 
 function quoteYamlString(value) {
   const safe = String(value ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -1464,9 +1469,16 @@ export async function convertSubscription(input, target, options = {}) {
     };
   }
 
-  return {
+    return {
     contentType: 'text/plain; charset=utf-8',
-    body: renderV2rayn(nodes),
-    meta: { count: nodes.length, skipped: skipped.length }
+    body: options.plainUris
+      ? renderNodeUris(nodes)
+      : renderV2rayn(nodes),
+    meta: {
+      count: nodes.length,
+      skipped: skipped.length,
+      plainUris: Boolean(options.plainUris)
+    }
   };
+
 }
