@@ -1,3 +1,5 @@
+import YAML from 'yaml';
+
 const DEFAULT_CLASH_GROUPS = [
   { name: 'Proxy', type: 'select', proxies: ['Auto', 'DIRECT'] },
   { name: 'Auto', type: 'url-test', proxies: [], url: 'https://www.gstatic.com/generate_204', interval: 300 }
