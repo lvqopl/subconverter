@@ -1,5 +1,11 @@
-import { convertSubscription } from './converter.js';
+import {
+  convertSubscription,
+  parseSubscription,
+  renderV2rayn
+} from './converter.js';
+
 import { createSharedResult, getSharedResult, purgeExpiredResults } from './storage.js';
+
 
 const TEMPLATE_PRESETS = [
   { id: 'none', label: 'No extra Clash template', url: '' },
@@ -318,6 +324,99 @@ export default {
     const url = new URL(request.url);
     if (request.method === 'GET' && url.pathname === '/') return html(renderPage());
     if (url.pathname === '/health') return json({ ok: true, now: new Date().toISOString() });
+        // Clash YAML -> Base64 节点订阅
+    if (
+      url.pathname === '/clash2base64' &&
+      request.method === 'GET'
+    ) {
+      try {
+        const sourceUrl = url.searchParams.get('url') || '';
+
+        if (!sourceUrl) {
+          return json({
+            ok: false,
+            message: 'Missing url parameter.'
+          }, 400);
+        }
+
+        const inputData = {
+          sourceUrl,
+          subscription: '',
+          target: 'v2rayn',
+          templatePreset: 'none',
+          customTemplateUrl: '',
+          ttlSeconds: '3600'
+        };
+
+        const payload = await runConversion(inputData);
+
+        return new Response(payload.result.body, {
+          status: 200,
+          headers: {
+            'content-type': 'text/plain; charset=utf-8',
+            'cache-control': 'no-store',
+            'x-subconverter-target': 'v2rayn',
+            'x-subconverter-node-count': String(
+              payload.result.meta?.count || 0
+            ),
+            'x-subconverter-skipped-count': String(
+              payload.result.meta?.skipped || 0
+            )
+          }
+        });
+      } catch (error) {
+        return json({
+          ok: false,
+          message: error instanceof Error
+            ? error.message
+            : 'Unknown error'
+        }, 500);
+      }
+    }
+
+    // Base64 节点订阅 -> Clash YAML
+    if (
+      url.pathname === '/base642clash' &&
+      request.method === 'GET'
+    ) {
+      try {
+        const sourceUrl = url.searchParams.get('url') || '';
+
+        if (!sourceUrl) {
+          return json({
+            ok: false,
+            message: 'Missing url parameter.'
+          }, 400);
+        }
+
+        const inputData = {
+          sourceUrl,
+          subscription: '',
+          target: 'clash',
+          templatePreset: url.searchParams.get('templatePreset') || 'none',
+          customTemplateUrl:
+            url.searchParams.get('config') ||
+            url.searchParams.get('templateUrl') ||
+            '',
+          ttlSeconds: '3600'
+        };
+
+        const payload = await runConversion(inputData);
+
+        return buildResponse(
+          payload.result,
+          'clash',
+          payload.templateUrl
+        );
+      } catch (error) {
+        return json({
+          ok: false,
+          message: error instanceof Error
+            ? error.message
+            : 'Unknown error'
+        }, 500);
+      }
+    }
 
     if (url.pathname === '/share' && request.method === 'POST') {
       try {
