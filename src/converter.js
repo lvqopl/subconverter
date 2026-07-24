@@ -80,6 +80,268 @@ function isLikelyNodeList(value) {
   return /^(vmess|vless|trojan|ss|socks|http|tuic|hy2|hysteria2):\/\//m.test(value);
 }
 
+function isLikelyClashConfig(value) {
+  if (!value) {
+    return false;
+  }
+
+  return /^\s*proxies\s*:/m.test(value);
+}
+
+function getClashOption(proxy, name, fallback = '') {
+  if (proxy[name] !== undefined && proxy[name] !== null) {
+    return proxy[name];
+  }
+
+  const kebabName = name.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
+
+  if (proxy[kebabName] !== undefined && proxy[kebabName] !== null) {
+    return proxy[kebabName];
+  }
+
+  return fallback;
+}
+
+function parseClashProxy(proxy, index) {
+  if (!proxy || typeof proxy !== 'object') {
+    return null;
+  }
+
+  const type = String(proxy.type || '').toLowerCase();
+  const name = ensureName(proxy.name, `${type || 'proxy'}-${index}`);
+
+  if (!proxy.server || !proxy.port || !type) {
+    return null;
+  }
+
+  const wsOpts = proxy['ws-opts'] || proxy.wsOpts || {};
+  const wsHeaders = wsOpts.headers || {};
+  const grpcOpts = proxy['grpc-opts'] || proxy.grpcOpts || {};
+  const realityOpts = proxy['reality-opts'] || proxy.realityOpts || {};
+
+  const network =
+    proxy.network ||
+    (wsOpts ? (Object.keys(wsOpts).length ? 'ws' : 'tcp') : 'tcp');
+
+  const common = {
+    name,
+    server: String(proxy.server),
+    port: parsePort(proxy.port),
+    udp: proxy.udp !== false,
+    tls: Boolean(proxy.tls),
+    skipCertVerify: Boolean(
+      proxy['skip-cert-verify'] ??
+      proxy.skipCertVerify ??
+      false
+    ),
+    servername: String(
+      proxy.servername ||
+      proxy.sni ||
+      proxy['server-name'] ||
+      ''
+    ),
+    network: String(network || 'tcp').toLowerCase(),
+    wsPath: String(wsOpts.path || ''),
+    wsHost: String(wsHeaders.Host || wsHeaders.host || ''),
+    grpcServiceName: String(
+      grpcOpts['grpc-service-name'] ||
+      grpcOpts.grpcServiceName ||
+      ''
+    ),
+    clientFingerprint: String(
+      proxy['client-fingerprint'] ||
+      proxy.clientFingerprint ||
+      ''
+    )
+  };
+
+  if (type === 'vmess') {
+    return {
+      ...baseNode('vmess', common.server, common.port, common.name),
+      ...common,
+      uuid: String(proxy.uuid || ''),
+      alterId: parsePort(proxy.alterId || proxy['alter-id'] || 0),
+      cipher: String(proxy.cipher || 'auto'),
+      tls: Boolean(proxy.tls),
+      network: String(proxy.network || 'tcp').toLowerCase()
+    };
+  }
+
+  if (type === 'vless') {
+    const reality = Boolean(
+      proxy.reality ||
+      proxy['reality-opts'] ||
+      proxy.realityOpts
+    );
+
+    return {
+      ...baseNode('vless', common.server, common.port, common.name),
+      ...common,
+      uuid: String(proxy.uuid || ''),
+      flow: String(proxy.flow || ''),
+      reality,
+      publicKey: String(
+        realityOpts['public-key'] ||
+        realityOpts.publicKey ||
+        ''
+      ),
+      shortId: String(
+        realityOpts['short-id'] ||
+        realityOpts.shortId ||
+        ''
+      ),
+      spiderX: String(
+        realityOpts['spider-x'] ||
+        realityOpts.spiderX ||
+        ''
+      ),
+      tls: Boolean(proxy.tls || reality)
+    };
+  }
+
+  if (type === 'trojan') {
+    return {
+      ...baseNode('trojan', common.server, common.port, common.name),
+      ...common,
+      password: String(proxy.password || ''),
+      tls: true
+    };
+  }
+
+  if (type === 'ss' || type === 'shadowsocks') {
+    return {
+      ...baseNode('ss', common.server, common.port, common.name),
+      ...common,
+      cipher: String(proxy.cipher || proxy.method || ''),
+      password: String(proxy.password || ''),
+      plugin: String(proxy.plugin || '')
+    };
+  }
+
+  if (type === 'socks5' || type === 'socks') {
+    return {
+      ...baseNode('socks5', common.server, common.port, common.name),
+      ...common,
+      username: String(proxy.username || ''),
+      password: String(proxy.password || '')
+    };
+  }
+
+  if (type === 'http' || type === 'https') {
+    return {
+      ...baseNode('http', common.server, common.port, common.name),
+      ...common,
+      tls: type === 'https' || Boolean(proxy.tls),
+      username: String(proxy.username || ''),
+      password: String(proxy.password || '')
+    };
+  }
+
+  if (type === 'tuic') {
+    const tlsOptions = proxy.tls || {};
+
+    return {
+      ...baseNode('tuic', common.server, common.port, common.name),
+      ...common,
+      uuid: String(proxy.uuid || ''),
+      password: String(proxy.password || ''),
+      congestionController: String(
+        proxy['congestion-controller'] ||
+        proxy.congestion_controller ||
+        'bbr'
+      ),
+      alpn: Array.isArray(proxy.alpn) ? proxy.alpn : [],
+      disableSni: Boolean(
+        proxy['disable-sni'] ||
+        proxy.disable_sni ||
+        false
+      ),
+      sni: String(proxy.sni || tlsOptions.servername || ''),
+      skipCertVerify: Boolean(
+        proxy['skip-cert-verify'] ||
+        proxy.skipCertVerify ||
+        false
+      ),
+      zeroRttHandshake: Boolean(
+        proxy['reduce-rtt'] ||
+        proxy.zero_rtt_handshake ||
+        false
+      ),
+      heartbeat: String(proxy.heartbeat || '10s')
+    };
+  }
+
+  if (
+    type === 'hysteria2' ||
+    type === 'hy2' ||
+    type === 'hysteria'
+  ) {
+    const obfs = proxy.obfs || {};
+    const obfsOptions =
+      typeof obfs === 'object' ? obfs : {};
+
+    return {
+      ...baseNode('hysteria2', common.server, common.port, common.name),
+      ...common,
+      password: String(proxy.password || ''),
+      sni: String(proxy.sni || ''),
+      skipCertVerify: Boolean(
+        proxy['skip-cert-verify'] ||
+        proxy.skipCertVerify ||
+        false
+      ),
+      alpn: Array.isArray(proxy.alpn) ? proxy.alpn : [],
+      obfs: String(
+        typeof obfs === 'string'
+          ? obfs
+          : obfs.type || ''
+      ),
+      obfsPassword: String(
+        proxy['obfs-password'] ||
+        obfsOptions.password ||
+        ''
+      ),
+      upMbps: parsePort(proxy.up || proxy.up_mbps || 0),
+      downMbps: parsePort(proxy.down || proxy.down_mbps || 0)
+    };
+  }
+
+  return null;
+}
+
+export function parseClashSubscription(input) {
+  let config;
+
+  try {
+    config = YAML.parse(String(input || ''));
+  } catch {
+    return {
+      nodes: [],
+      skipped: [input]
+    };
+  }
+
+  const proxies = Array.isArray(config?.proxies)
+    ? config.proxies
+    : [];
+
+  const nodes = [];
+  const skipped = [];
+
+  proxies.forEach((proxy, index) => {
+    const node = parseClashProxy(proxy, index + 1);
+
+    if (node) {
+      nodes.push(node);
+    } else {
+      skipped.push(proxy?.name || `proxy-${index + 1}`);
+    }
+  });
+
+  return { nodes, skipped };
+}
+
+
 function parsePort(value) {
   const port = Number.parseInt(value, 10);
   return Number.isFinite(port) ? port : 0;
@@ -265,6 +527,27 @@ function parseHysteria2(uri, index) {
 }
 
 export function parseSubscription(input) {
+  const trimmed = String(input || '').trim();
+
+  if (!trimmed) {
+    return {
+      nodes: [],
+      skipped: []
+    };
+  }
+
+  // 直接识别 Clash YAML
+  if (isLikelyClashConfig(trimmed)) {
+    return parseClashSubscription(trimmed);
+  }
+
+  // 识别 Base64 解码后的 Clash YAML
+  const decoded = decodeBase64Loose(trimmed);
+
+  if (isLikelyClashConfig(decoded)) {
+    return parseClashSubscription(decoded);
+  }
+
   const lines = splitNodeLines(input);
   const nodes = [];
   const skipped = [];
